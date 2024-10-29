@@ -10,9 +10,6 @@
 int Stepper1[] = {2, 4, 6};
 int Stepper2[] = {3, 5, 7};
 
-int stepState = LOW;
-unsigned long previousMillis = 0;
-
 void setup() {
   Serial.begin(9600);
   // Prepare pins
@@ -20,10 +17,6 @@ void setup() {
   pinMode(Stepper1[1], OUTPUT);
   pinMode(Stepper2[0], OUTPUT);
   pinMode(Stepper2[1], OUTPUT);
-
-  // Enable drivers
-  digitalWrite(Stepper1[0], LOW);
-  digitalWrite(Stepper2[0], LOW);
 }
 
 void loop() {
@@ -34,7 +27,6 @@ void loop() {
 
 // 200 steps * 16 micto steps = 3200 steps
 void moveMotor(int Stepper[], int angle, int time, int direction) {
-  Serial.println(Stepper[1]);
   digitalWrite(Stepper[0], LOW);        // Enable driver
   digitalWrite(Stepper[2], direction); // Set direction: 0 - left, 1 - right
 
