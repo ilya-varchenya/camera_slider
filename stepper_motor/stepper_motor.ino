@@ -1,3 +1,8 @@
+#include <AccelStepper.h>
+#include <LiquidCrystal_I2C.h>
+#include "GyverEncoder.h"
+
+// stepper pins
 #define EN_PIN_1   2
 #define STEP_PIN_1 4
 #define DIR_PIN_1  6
@@ -6,58 +11,141 @@
 #define STEP_PIN_2 5
 #define DIR_PIN_2  7
 
-#define DEG_PER_STEP 9
+// encoder pins
+#define CLK 10
+#define DT 11
+#define SW 12
 
-// EN_PIN_*, STEP_PIN_*, DIR_PIN_*
-int Stepper1[] = {2, 4, 6};
-int Stepper2[] = {3, 5, 7};
+// encoder constructor
+Encoder enc1(CLK, DT, SW);
 
-unsigned long startMillis;
-unsigned long startMillisStep;
+// LCD constructor
+LiquidCrystal_I2C lcd(0x27, 20, 2);
 
-void setup() {
-  Serial.begin(9600);
-  // Prepare pins
-  pinMode(Stepper1[0], OUTPUT);
-  pinMode(Stepper1[1], OUTPUT);
-  pinMode(Stepper2[0], OUTPUT);
-  pinMode(Stepper2[1], OUTPUT);
+int vals[4] = {0, 0, 0, 0}; // array of menu parameters
+int8_t arrowPos = 0;  // arrow position
+bool isMoving = false;
+
+// stepper motors constructors
+AccelStepper stepper1(AccelStepper::DRIVER, STEP_PIN_1, DIR_PIN_1);
+AccelStepper stepper2(AccelStepper::DRIVER, STEP_PIN_2, DIR_PIN_2);
+ 
+void setup() {  
+  Serial.begin(115200);
+
+  stepper1.setMaxSpeed(500);
+  stepper1.setAcceleration(50);
+  
+  stepper2.setMaxSpeed(500);
+  stepper2.setAcceleration(50);
+
+  stepper1.setMinPulseWidth(200);
+  stepper2.setMinPulseWidth(200);
+
   // disable drivers by default
-  digitalWrite(Stepper1[0], HIGH);
-  digitalWrite(Stepper2[0], HIGH);
+  pinMode(EN_PIN_1, OUTPUT);
+  pinMode(EN_PIN_2, OUTPUT);
+  digitalWrite(EN_PIN_1, HIGH);
+  digitalWrite(EN_PIN_2, HIGH);
 
-  startMillis = millis();
-  startMillisStep = millis();
+  // set encoder
+  enc1.setType(TYPE2);
+
+  // set LCD
+  lcd.init();
+  lcd.backlight();
+  
+  // print menu
+  printGUI();
 }
 
 void loop() {
-  // move 1 motor
-  // moveMotor(Stepper1, 180, 2, 1);
-  moveMotor(Stepper2, 720, 2, 1);
-  
-  // delay(3000);
+  // if (!stepper1.isRunning() && !stepper2.isRunning()) {
+  if (isMoving) {
+    // enable drivers
+    digitalWrite(EN_PIN_1, LOW);
+    digitalWrite(EN_PIN_2, LOW);
+    moveCamera();
+    isMoving = stepper1.isRunning() || stepper2.isRunning();
+  } else {
+    // disable drivers
+    digitalWrite(EN_PIN_1, HIGH);
+    digitalWrite(EN_PIN_2, HIGH);
+    getParamsFromMenu();
+  }
 }
 
-
-// 200 steps * 16 micro steps = 3200 steps
-void moveMotor(int Stepper[], int angle, int time, int direction) {
-  float period = (time * 1000 * 2 / (angle * DEG_PER_STEP));
-  float finish_time = time * 1000;
-
-  if (millis() - startMillis <= finish_time) {
-    Serial.println("1");
-    digitalWrite(Stepper[0], LOW);       // Enable driver
-    digitalWrite(Stepper[2], direction); // Set direction: 0 - left, 1 - right
-    if (millis() - startMillisStep >= period) {
-      Serial.println("2");
-      digitalWrite(Stepper[1], !digitalRead(Stepper[1]));  // Step
-      startMillisStep = millis();
-    }
-  } else {
-    Serial.println("3");
-    digitalWrite(Stepper[0], HIGH);  // Disable driver
-    delay(3000);
-    startMillis = millis();
-    startMillisStep = millis();
+void getParamsFromMenu() {
+  enc1.tick();
+  if (enc1.isDouble()) {
+    stepper1.moveTo(vals[2]);
+    stepper2.moveTo(vals[2]);
+    isMoving = true;
   }
+
+  if (enc1.isTurn()) {  // при любом повороте
+    Serial.println("enc move");
+    int increment = 0;  // локальная переменная направления
+    int incrementStep = 1; // локальная переменная шага инкремента
+    
+    // получаем направление    
+    if (enc1.isRight()) increment = 1;
+    if (enc1.isLeft()) increment = -1;
+    
+    arrowPos += increment;  // двигаем курсор   
+    arrowPos = constrain(arrowPos, 0, 3); // ограничиваем
+
+    increment = 0;  // обнуляем инкремент
+    // параметр дистанции и времени инкрементируем на 5
+    if (arrowPos == 2 || arrowPos == 3) {
+      incrementStep = 100;
+    } else {
+      incrementStep = 1;
+    }
+    if (enc1.isRightH()) increment = 1 * incrementStep;
+    if (enc1.isLeftH()) increment = -1 * incrementStep;
+    // меняем параметры
+    vals[arrowPos] += increment;
+    
+    printGUI();
+  }
+}
+
+void moveCamera() {
+  // lcd.clear();
+  // lcd.setCursor(2, 0);
+  // lcd.print("In progress...");
+  
+  // Change direction at the limits
+  // if (stepper1.distanceToGo() == 0)
+  //     stepper1.moveTo(-stepper1.currentPosition());
+  // if (stepper2.distanceToGo() == 0)
+  //     stepper2.moveTo(-stepper2.currentPosition());
+  stepper1.run();
+  stepper2.run();
+
+  // lcd.clear();
+  // lcd.setCursor(2, 0);
+  // lcd.print("Finished");
+  // lcd.clear();
+  // printGUI();
+}
+
+void printGUI() {
+  lcd.setCursor(0, 0); lcd.print("Start:"); lcd.print(vals[0]);
+  lcd.setCursor(8, 0); lcd.print("Stop:"); lcd.print(vals[1]);
+  lcd.setCursor(0, 1); lcd.print("Dist:"); lcd.print(vals[2]);
+  lcd.setCursor(8, 1); lcd.print("Time:"); lcd.print(vals[3]);
+  // выводим стрелку
+  switch (arrowPos) {
+    case 0: lcd.setCursor(4, 0);
+      break;
+    case 1: lcd.setCursor(12, 0);
+      break;
+    case 2: lcd.setCursor(4, 1);
+      break;
+    case 3: lcd.setCursor(12, 1);
+      break;
+  }
+  lcd.write(126);   // вывести стрелку
 }
