@@ -22,9 +22,21 @@ Encoder enc1(CLK, DT, SW);
 // LCD constructor
 LiquidCrystal_I2C lcd(0x27, 20, 2);
 
-int vals[4] = {0, 0, 0, 0}; // array of menu parameters
+// AccelStepper lib setup
+float stepperMaxSpeed = 5000; 
+float stepperAcceleration = 1500;
+unsigned int stepperMinPulseWidth = 20;
+
+long path1B = 17000; // TODO: change after measuring full path
+long path1A = 0;
+long path2B = 1700; // TODO: change after measuring full path
+long path2A = 0;
+
+// array of menu parameters with default values
+long vals[4] = {path1B, stepperMaxSpeed, stepperAcceleration, 0};
 int8_t arrowPos = 0;  // arrow position
 bool isMoving = false;
+
 
 // stepper motors constructors
 AccelStepper stepper1(AccelStepper::DRIVER, STEP_PIN_1, DIR_PIN_1);
@@ -33,20 +45,24 @@ AccelStepper stepper2(AccelStepper::DRIVER, STEP_PIN_2, DIR_PIN_2);
 void setup() {  
   Serial.begin(115200);
 
-  stepper1.setMaxSpeed(500);
-  stepper1.setAcceleration(50);
+  // stepper1.setMaxSpeed(stepperMaxSpeed);
+  // stepper1.setAcceleration(stepperAcceleration);
   
-  stepper2.setMaxSpeed(500);
-  stepper2.setAcceleration(50);
+  // stepper2.setMaxSpeed(stepperMaxSpeed);
+  // stepper2.setAcceleration(stepperAcceleration);
 
-  stepper1.setMinPulseWidth(200);
-  stepper2.setMinPulseWidth(200);
+  stepper1.setMinPulseWidth(stepperMinPulseWidth);
+  stepper2.setMinPulseWidth(stepperMinPulseWidth);
 
   // disable drivers by default
   pinMode(EN_PIN_1, OUTPUT);
   pinMode(EN_PIN_2, OUTPUT);
   digitalWrite(EN_PIN_1, HIGH);
   digitalWrite(EN_PIN_2, HIGH);
+
+  // TODO: create a method to move stepper 1 to initial position
+  // move stepper 1 to initial position
+  // moveToInitial();
 
   // set encoder
   enc1.setType(TYPE2);
@@ -60,7 +76,8 @@ void setup() {
 }
 
 void loop() {
-  // if (!stepper1.isRunning() && !stepper2.isRunning()) {
+  // TODO: finish functionality with different angles and distance
+  // on a rail
   if (isMoving) {
     // enable drivers
     digitalWrite(EN_PIN_1, LOW);
@@ -78,13 +95,17 @@ void loop() {
 void getParamsFromMenu() {
   enc1.tick();
   if (enc1.isDouble()) {
-    stepper1.moveTo(vals[2]);
-    stepper2.moveTo(vals[2]);
+    stepper1.moveTo(vals[0]);
+    stepper2SetParams();
+    
+    stepper1.setMaxSpeed(float(vals[1]));
+    stepper1.setAcceleration(float(vals[2]));
+    
     isMoving = true;
   }
 
   if (enc1.isTurn()) {  // при любом повороте
-    Serial.println("enc move");
+    // Serial.println("enc move");x
     int increment = 0;  // локальная переменная направления
     int incrementStep = 1; // локальная переменная шага инкремента
     
@@ -97,32 +118,41 @@ void getParamsFromMenu() {
 
     increment = 0;  // обнуляем инкремент
     // параметр дистанции и времени инкрементируем на 5
-    if (arrowPos == 2 || arrowPos == 3) {
+    if (arrowPos == 0 || arrowPos == 1 || arrowPos == 2) {
       incrementStep = 100;
     } else {
-      incrementStep = 1;
+      incrementStep = 10;
     }
     if (enc1.isRightH()) increment = 1 * incrementStep;
     if (enc1.isLeftH()) increment = -1 * incrementStep;
     // меняем параметры
     vals[arrowPos] += increment;
-    
+
     printGUI();
   }
+}
+
+void stepper2SetParams() {
+  float AB = path1B;
+  float BS = path1B/2;
+  float alfa =  atan(BS / AB) * 57.2958;
+  float betta = 90 - alfa;
+  int stepsAmmount = int(round(3200/360 * betta));
+  
+  stepper2.moveTo(stepsAmmount);
+  // TODO: count stepper 2 velocity according to stepper 1 velocity
+  stepper2.setMaxSpeed(float(vals[1]));
+  stepper2.setAcceleration(float(vals[2]));
 }
 
 void moveCamera() {
   // lcd.clear();
   // lcd.setCursor(2, 0);
   // lcd.print("In progress...");
-  
-  // Change direction at the limits
-  // if (stepper1.distanceToGo() == 0)
-  //     stepper1.moveTo(-stepper1.currentPosition());
-  // if (stepper2.distanceToGo() == 0)
-  //     stepper2.moveTo(-stepper2.currentPosition());
+
   stepper1.run();
   stepper2.run();
+
 
   // lcd.clear();
   // lcd.setCursor(2, 0);
@@ -132,10 +162,11 @@ void moveCamera() {
 }
 
 void printGUI() {
-  lcd.setCursor(0, 0); lcd.print("Start:"); lcd.print(vals[0]);
-  lcd.setCursor(8, 0); lcd.print("Stop:"); lcd.print(vals[1]);
-  lcd.setCursor(0, 1); lcd.print("Dist:"); lcd.print(vals[2]);
-  lcd.setCursor(8, 1); lcd.print("Time:"); lcd.print(vals[3]);
+  // TODO: get params from user (AB, BC, BS, time)
+  lcd.setCursor(0, 0); lcd.print("Dist:"); lcd.print(vals[0]);
+  lcd.setCursor(8, 0); lcd.print("maxS:"); lcd.print(vals[1]);
+  lcd.setCursor(0, 1); lcd.print("accl:"); lcd.print(vals[2]);
+  lcd.setCursor(8, 1); lcd.print("bla:"); lcd.print(vals[3]);
   // выводим стрелку
   switch (arrowPos) {
     case 0: lcd.setCursor(4, 0);
@@ -149,3 +180,13 @@ void printGUI() {
   }
   lcd.write(126);   // вывести стрелку
 }
+
+// void moveToInitial() {
+//   stepper1.setMaxSpeed(stepperMaxSpeed);
+//   stepper1.setAcceleration(stepperAcceleration);
+//   setPinsInverted(true, false, false); // invert direction
+//   stepper1.moveTo(vals[0]);
+//   stepper1.run()
+//   setCurrentPosition(0);
+//   setPinsInverted(false, false, false); // set clockwise direction
+// }
