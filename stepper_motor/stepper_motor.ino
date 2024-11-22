@@ -26,16 +26,19 @@ LiquidCrystal_I2C lcd(0x27, 20, 2);
 float stepperMaxSpeed = 5000; 
 float stepperAcceleration = 1500;
 unsigned int stepperMinPulseWidth = 20;
+// stepper 2 steps ammount
+int stepsAmmount = 0;
+// check if any motor is moving; lib method doesn't work for runSpeedToPosition()
+bool isMoving = false;
 
-long path1B = 17000; // TODO: change after measuring full path
-long path1A = 0;
-long path2B = 1700; // TODO: change after measuring full path
-long path2A = 0;
+int stepperTime = 5; // TODO: get this value from user
+long pathB = 17000; // TODO: change after measuring full path
+long pathA = 0;
 
 // array of menu parameters with default values
-long vals[4] = {path1B, stepperMaxSpeed, stepperAcceleration, 0};
+long vals[4] = {pathB, stepperTime, stepperAcceleration, 0};
 int8_t arrowPos = 0;  // arrow position
-bool isMoving = false;
+
 
 
 // stepper motors constructors
@@ -76,14 +79,17 @@ void setup() {
 }
 
 void loop() {
-  // TODO: finish functionality with different angles and distance
-  // on a rail
+  // TODO: finish functionality with different angles and distance on a rail
   if (isMoving) {
     // enable drivers
     digitalWrite(EN_PIN_1, LOW);
     digitalWrite(EN_PIN_2, LOW);
     moveCamera();
-    isMoving = stepper1.isRunning() || stepper2.isRunning();
+    if (stepper1.currentPosition() == vals[0] && stepper2.currentPosition() == stepsAmmount) {
+      isMoving = false;
+    } else {
+      isMoving = true;
+    }
   } else {
     // disable drivers
     digitalWrite(EN_PIN_1, HIGH);
@@ -95,29 +101,25 @@ void loop() {
 void getParamsFromMenu() {
   enc1.tick();
   if (enc1.isDouble()) {
-    stepper1.moveTo(vals[0]);
+    stepper1SetParams();
     stepper2SetParams();
-    
-    stepper1.setMaxSpeed(float(vals[1]));
-    stepper1.setAcceleration(float(vals[2]));
-    
+
     isMoving = true;
   }
 
-  if (enc1.isTurn()) {  // при любом повороте
-    // Serial.println("enc move");x
-    int increment = 0;  // локальная переменная направления
-    int incrementStep = 1; // локальная переменная шага инкремента
+  if (enc1.isTurn()) {
+    int increment = 0;  // local variable of direction
+    int incrementStep = 1;
     
-    // получаем направление    
+    // getting direction
     if (enc1.isRight()) increment = 1;
     if (enc1.isLeft()) increment = -1;
     
-    arrowPos += increment;  // двигаем курсор   
-    arrowPos = constrain(arrowPos, 0, 3); // ограничиваем
+    arrowPos += increment;  // moving cursor
+    arrowPos = constrain(arrowPos, 0, 3); // measure by cursor
 
-    increment = 0;  // обнуляем инкремент
-    // параметр дистанции и времени инкрементируем на 5
+    increment = 0;
+    // different increment 
     if (arrowPos == 0 || arrowPos == 1 || arrowPos == 2) {
       incrementStep = 100;
     } else {
@@ -125,24 +127,45 @@ void getParamsFromMenu() {
     }
     if (enc1.isRightH()) increment = 1 * incrementStep;
     if (enc1.isLeftH()) increment = -1 * incrementStep;
-    // меняем параметры
+    // set new values
     vals[arrowPos] += increment;
 
     printGUI();
   }
 }
 
+void stepper1SetParams() {
+  float speed = pathB / stepperTime;
+
+  stepper1.moveTo(vals[0]);
+  stepper1.setMaxSpeed(stepperMaxSpeed);
+  stepper1.setSpeed(speed);
+}
+
 void stepper2SetParams() {
-  float AB = path1B;
-  float BS = path1B/2;
+  /*                S 
+          |        /|
+          |       / |
+          |      /  |
+          |     / ^ |
+          |    /  | |
+          |   /betta|
+   betta--|> /      |
+          | / alfa  |
+          A---------B
+  */
+  float AB = pathB;
+  float BS = pathB/2;
   float alfa =  atan(BS / AB) * 57.2958;
   float betta = 90 - alfa;
-  int stepsAmmount = int(round(3200/360 * betta));
+  stepsAmmount = int(round(3200 / 360 * betta));
+  float speed2 = stepsAmmount / stepperTime;
   
+  // invert direction
+  stepper2.setPinsInverted(true, false, false);
   stepper2.moveTo(stepsAmmount);
-  // TODO: count stepper 2 velocity according to stepper 1 velocity
-  stepper2.setMaxSpeed(float(vals[1]));
-  stepper2.setAcceleration(float(vals[2]));
+  stepper2.setMaxSpeed(stepperMaxSpeed);
+  stepper2.setSpeed(speed2);
 }
 
 void moveCamera() {
@@ -150,8 +173,10 @@ void moveCamera() {
   // lcd.setCursor(2, 0);
   // lcd.print("In progress...");
 
-  stepper1.run();
-  stepper2.run();
+  // stepper1.run();
+  // stepper2.run();
+  stepper1.runSpeedToPosition();
+  stepper2.runSpeedToPosition();
 
 
   // lcd.clear();
