@@ -32,27 +32,25 @@ int stepsAmmount = 0;
 bool isMoving = false;
 
 int stepperTime = 5; // TODO: get this value from user
-long pathB = 17000; // TODO: change after measuring full path
+long pathC = 36000; // TODO: change after measuring full path
+long pathB = 24000; // TODO: change after measuring full path
 long pathA = 0;
+long pathBS = 12000; // TODO: change after measuring full path
 
 // array of menu parameters with default values
-long vals[4] = {pathB, stepperTime, stepperAcceleration, 0};
+long vals[4] = {pathC, stepperTime, stepperAcceleration, 0};
 int8_t arrowPos = 0;  // arrow position
-
-
 
 // stepper motors constructors
 AccelStepper stepper1(AccelStepper::DRIVER, STEP_PIN_1, DIR_PIN_1);
 AccelStepper stepper2(AccelStepper::DRIVER, STEP_PIN_2, DIR_PIN_2);
- 
+
+// can be removed after fixin speed counting formula
+int countStepper2Call = 0;
+
+
 void setup() {  
   Serial.begin(115200);
-
-  // stepper1.setMaxSpeed(stepperMaxSpeed);
-  // stepper1.setAcceleration(stepperAcceleration);
-  
-  // stepper2.setMaxSpeed(stepperMaxSpeed);
-  // stepper2.setAcceleration(stepperAcceleration);
 
   stepper1.setMinPulseWidth(stepperMinPulseWidth);
   stepper2.setMinPulseWidth(stepperMinPulseWidth);
@@ -85,10 +83,13 @@ void loop() {
     digitalWrite(EN_PIN_1, LOW);
     digitalWrite(EN_PIN_2, LOW);
     moveCamera();
-    if (stepper1.currentPosition() == vals[0] && stepper2.currentPosition() == stepsAmmount) {
-      isMoving = false;
-    } else {
-      isMoving = true;
+    if (stepper1.currentPosition() == pathC) {
+        isMoving = false;
+    }
+    if (stepper2.currentPosition() == stepsAmmount && countStepper2Call < 2) {    
+      // calling set params method for second part
+      stepper2SetParams(pathC - pathB);
+      Serial.println("/////////");
     }
   } else {
     // disable drivers
@@ -102,7 +103,7 @@ void getParamsFromMenu() {
   enc1.tick();
   if (enc1.isDouble()) {
     stepper1SetParams();
-    stepper2SetParams();
+    stepper2SetParams(pathB);
 
     isMoving = true;
   }
@@ -135,31 +136,32 @@ void getParamsFromMenu() {
 }
 
 void stepper1SetParams() {
-  float speed = pathB / stepperTime;
+  float speed = pathC / stepperTime;
 
-  stepper1.moveTo(vals[0]);
+  stepper1.moveTo(pathC);
   stepper1.setMaxSpeed(stepperMaxSpeed);
   stepper1.setSpeed(speed);
 }
 
-void stepper2SetParams() {
+void stepper2SetParams(long path) {
+  countStepper2Call++;
   /*                S 
-          |        /|
-          |       / |
-          |      /  |
-          |     / ^ |
-          |    /  | |
-          |   /betta|
-   betta--|> /      |
-          | / alfa  |
-          A---------B
+          |        /|\
+          |       / | \
+          |      /  |  \
+          |     / ^ |   \
+          |    /  | |    \
+          |   /betta|     \
+   betta--|> /      |      \
+          | / alfa  |       \
+          A---------B--------C
   */
-  float AB = pathB;
-  float BS = pathB/2;
-  float alfa =  atan(BS / AB) * 57.2958;
+
+  // TODO: fix the formula
+  float alfa =  atan(float(pathBS) / path) * 57.2958;
   float betta = 90 - alfa;
-  stepsAmmount = int(round(3200 / 360 * betta));
-  float speed2 = stepsAmmount / stepperTime;
+  stepsAmmount = int(round(3200.0 / 360.0 * betta));
+  float speed2 = stepsAmmount / (stepperTime * (float(path) / pathC));
   
   // invert direction
   stepper2.setPinsInverted(true, false, false);
@@ -187,7 +189,7 @@ void moveCamera() {
 }
 
 void printGUI() {
-  // TODO: get params from user (AB, BC, BS, time)
+  // TODO: get params from user (pathB, BC, pathBS, time)
   lcd.setCursor(0, 0); lcd.print("Dist:"); lcd.print(vals[0]);
   lcd.setCursor(8, 0); lcd.print("maxS:"); lcd.print(vals[1]);
   lcd.setCursor(0, 1); lcd.print("accl:"); lcd.print(vals[2]);
