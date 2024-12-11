@@ -11,6 +11,8 @@
 #define STEP_PIN_2 5
 #define DIR_PIN_2  7
 
+#define INIT_BTN 9
+
 // encoder pins
 #define CLK 10
 #define DT 11
@@ -23,7 +25,7 @@ Encoder enc1(CLK, DT, SW);
 LiquidCrystal_I2C lcd(0x27, 20, 2);
 
 // AccelStepper lib setup
-float stepperMaxSpeed = 5000; 
+float stepperMaxSpeed = 10000; 
 float stepperAcceleration = 1500;
 unsigned int stepperMinPulseWidth = 20;
 // stepper 2 steps ammount
@@ -31,11 +33,11 @@ int stepsAmmount = 0;
 // check if any motor is moving; lib method doesn't work for runSpeedToPosition()
 bool isMoving = false;
 
-int stepperTime = 5; // TODO: get this value from user
-long pathC = 36000; // TODO: change after measuring full path
-long pathB = 24000; // TODO: change after measuring full path
+int stepperTime = 15; // TODO: get this value from user
+long pathC = 20000;
+long pathB = 10000; // TODO: change after measuring full path
 long pathA = 0;
-long pathBS = 12000; // TODO: change after measuring full path
+long pathBS = 10000; // TODO: change after measuring full path
 
 // array of menu parameters with default values
 long vals[4] = {pathC, stepperTime, stepperAcceleration, 0};
@@ -48,6 +50,7 @@ AccelStepper stepper2(AccelStepper::DRIVER, STEP_PIN_2, DIR_PIN_2);
 // can be removed after fixin speed counting formula
 int countStepper2Call = 0;
 
+bool isInitialised = false;
 
 void setup() {  
   Serial.begin(115200);
@@ -61,9 +64,8 @@ void setup() {
   digitalWrite(EN_PIN_1, HIGH);
   digitalWrite(EN_PIN_2, HIGH);
 
-  // TODO: create a method to move stepper 1 to initial position
-  // move stepper 1 to initial position
-  // moveToInitial();
+  // initial button
+  pinMode(INIT_BTN, INPUT);
 
   // set encoder
   enc1.setType(TYPE2);
@@ -71,13 +73,32 @@ void setup() {
   // set LCD
   lcd.init();
   lcd.backlight();
+
+  // set initial params for stepper 1
+  // stepper1.moveTo(pathC * (-1));
+  stepper1.moveTo(-40000);
+  stepper1.setMaxSpeed(stepperMaxSpeed);
+  stepper1.setSpeed(stepperMaxSpeed * (-1));
   
   // print menu
   printGUI();
 }
 
 void loop() {
-  // TODO: finish functionality with different angles and distance on a rail
+  // move stepper1 to start position after Arduino boot
+  if (!isInitialised) {
+    if (digitalRead(INIT_BTN) == LOW) {
+      // enable driver
+      digitalWrite(EN_PIN_1, LOW);
+      stepper1.runSpeedToPosition();
+    } else {
+      // disable driver
+      digitalWrite(EN_PIN_1, HIGH);
+      isInitialised = true;
+      stepper1.setCurrentPosition(0);
+    }
+  }
+
   if (isMoving) {
     // enable drivers
     digitalWrite(EN_PIN_1, LOW);
@@ -88,8 +109,8 @@ void loop() {
     }
     if (stepper2.currentPosition() == stepsAmmount && countStepper2Call < 2) {    
       // calling set params method for second part
+      stepper2.setCurrentPosition(0);
       stepper2SetParams(pathC - pathB);
-      Serial.println("/////////");
     }
   } else {
     // disable drivers
@@ -136,7 +157,16 @@ void getParamsFromMenu() {
 }
 
 void stepper1SetParams() {
-  float speed = pathC / stepperTime;
+  float speed = float(pathC) / stepperTime;
+
+  Serial.println("Stepper 1:");
+  Serial.print("Time: ");
+  Serial.println(stepperTime);
+  Serial.print("Path: ");
+  Serial.println(pathC);
+  Serial.print("Speed: ");
+  Serial.println(speed);
+  Serial.println("\\\\\\\\\\\\\\");
 
   stepper1.moveTo(pathC);
   stepper1.setMaxSpeed(stepperMaxSpeed);
@@ -160,8 +190,16 @@ void stepper2SetParams(long path) {
   // TODO: fix the formula
   float alfa =  atan(float(pathBS) / path) * 57.2958;
   float betta = 90 - alfa;
-  stepsAmmount = int(round(3200.0 / 360.0 * betta));
+  stepsAmmount = int(round((3200.0 / 360.0) * betta));
   float speed2 = stepsAmmount / (stepperTime * (float(path) / pathC));
+  Serial.println("Stepper 2:");
+  Serial.print("Time: ");
+  Serial.println(stepperTime * (float(path) / pathC));
+  Serial.print("Path: ");
+  Serial.println(stepsAmmount);
+  Serial.print("Speed: ");
+  Serial.println(speed2);
+  Serial.println("\\\\\\\\\\\\\\");
   
   // invert direction
   stepper2.setPinsInverted(true, false, false);
@@ -208,12 +246,3 @@ void printGUI() {
   lcd.write(126);   // вывести стрелку
 }
 
-// void moveToInitial() {
-//   stepper1.setMaxSpeed(stepperMaxSpeed);
-//   stepper1.setAcceleration(stepperAcceleration);
-//   setPinsInverted(true, false, false); // invert direction
-//   stepper1.moveTo(vals[0]);
-//   stepper1.run()
-//   setCurrentPosition(0);
-//   setPinsInverted(false, false, false); // set clockwise direction
-// }
